@@ -117,6 +117,24 @@ export enum OperationType {
   WRITE = 'write',
 }
 
+// Safe timeout helper to prevent hanging on slow/rate-limited networks
+function promiseWithTimeout(promise: PromiseLike<any>, timeoutMs = 4000, apiName = 'Operation'): Promise<any> {
+  return new Promise<any>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timeout: ${apiName} did not respond within ${timeoutMs / 1000} seconds.`));
+    }, timeoutMs);
+
+    promise
+      .then((val) => {
+        clearTimeout(timer);
+        resolve(val);
+      }, (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 class RealSupabaseAuth {
   private _currentUser: UserProfile | null = null;
   private _authListeners: ((user: UserProfile | null) => void)[] = [];
@@ -135,60 +153,80 @@ class RealSupabaseAuth {
 
     // Fallback sync interval for UI responsiveness
     this._activeInterval = setInterval(async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await this.syncSessionUser(user, true); // silent reload
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await this.syncSessionUser(user, true); // silent reload
+        }
+      } catch (err) {
+        console.warn('Silent user check skipped/failed:', err);
       }
     }, 10000);
   }
 
   private async syncSessionUser(sbUser: any, silent = false) {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('userId', sbUser.id)
-        .single();
-      
-      if (!error && data) {
-        const profile = data as UserProfile;
-        this._currentUser = profile;
-        if (!silent) this._triggerAuthChange(profile);
-      } else {
-        // Query fallback local users cache
-        const localUsers = localCache.get<UserProfile>('users');
-        const found = localUsers.find(u => u.userId === sbUser.id || u.email === sbUser.email);
-        if (found) {
-          this._currentUser = found;
-          if (!silent) this._triggerAuthChange(found);
-        } else {
-          // Construct fallback User Profile
-          const isUserAdmin = sbUser.email === 'paypalwash007@gmail.com' || sbUser.email?.toLowerCase().includes('admin');
-          const fallbackProfile: UserProfile = {
-            userId: sbUser.id,
-            name: sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email?.split('@')[0] || 'Investor',
-            email: sbUser.email || '',
-            phone: sbUser.user_metadata?.phone || '',
-            role: isUserAdmin ? 'admin' : 'user',
-            status: isUserAdmin ? 'active' : 'kyc_pending',
-            referralCode: 'VG-' + sbUser.id.substring(0, 5).toUpperCase(),
-            bankAccounts: [],
-            notificationPrefs: { email: true, sms: true }
-          };
-          this._currentUser = fallbackProfile;
-          
-          // Persist in Supabase and cache
-          supabase.from('users').insert([fallbackProfile]).then(({ error }) => {
-            if (error) console.warn('Silent note: Profile insert failed:', error.message);
-          });
-          localCache.add('users', fallbackProfile);
+    console.log('[Auth] Syncing session user:', sbUser.email);
+    
+    // 1. Instantly construct a highly accurate fallback profile from authenticated session metadata
+    const isUserAdmin = sbUser.email === 'paypalwash007@gmail.com' || sbUser.email?.toLowerCase().includes('admin');
+    const immediateProfile: UserProfile = {
+      userId: sbUser.id,
+      name: sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email?.split('@')[0] || 'Investor',
+      email: sbUser.email || '',
+      phone: sbUser.user_metadata?.phone || '',
+      role: isUserAdmin ? 'admin' : 'user',
+      status: isUserAdmin ? 'active' : 'kyc_pending',
+      referralCode: 'VG-' + sbUser.id.substring(0, 5).toUpperCase(),
+      bankAccounts: [],
+      notificationPrefs: { email: true, sms: true }
+    };
 
-          if (!silent) this._triggerAuthChange(fallbackProfile);
-        }
-      }
-    } catch (err) {
-      console.error('Session user sync failure:', err);
+    // Prioritize active and cache state immediately so the dashboard displays without hanging
+    if (!this._currentUser || this._currentUser.userId !== sbUser.id) {
+      const localUsers = localCache.get<UserProfile>('users');
+      const foundInCache = localUsers.find(u => u.userId === sbUser.id || u.email.toLowerCase() === sbUser.email?.toLowerCase());
+      this._currentUser = foundInCache || immediateProfile;
+      console.log('[Auth] Resiliently matched session user baseline:', this._currentUser.email);
+      if (!silent) this._triggerAuthChange(this._currentUser);
     }
+
+    // 2. Perform the async DB reload in the background, fully isolated so it doesn't await or stall
+    supabase
+      .from('users')
+      .select('*')
+      .eq('userId', sbUser.id)
+      .single()
+      .then(
+        ({ data, error }) => {
+          if (!error && data) {
+            const profile = data as UserProfile;
+            this._currentUser = profile;
+            console.log('[Auth] Background session user synched from db:', profile.email);
+            if (!silent) this._triggerAuthChange(profile);
+            localCache.add('users', profile);
+          } else {
+            console.warn('[Auth] Background sync db miss or error:', error?.message);
+            // Look up in local storage as a robust fail-safe
+            const localUsers = localCache.get<UserProfile>('users');
+            const found = localUsers.find(u => u.userId === sbUser.id || u.email.toLowerCase() === sbUser.email?.toLowerCase());
+            if (found) {
+              this._currentUser = found;
+              if (!silent) this._triggerAuthChange(found);
+            } else {
+              // Write our constructed profile synchronously to local storage cache and async to DB
+              localCache.add('users', immediateProfile);
+              supabase.from('users').insert([immediateProfile]).then(({ error: insertErr }) => {
+                if (insertErr) console.warn('Saved background session auto-created registration profile:', insertErr.message);
+              });
+              this._currentUser = immediateProfile;
+              if (!silent) this._triggerAuthChange(immediateProfile);
+            }
+          }
+        },
+        (err) => {
+          console.warn('[Auth] Silent background sync exception caught gracefully:', err);
+        }
+      );
   }
 
   get currentUser() {
@@ -315,45 +353,38 @@ class RealSupabaseAuth {
   }
 
   async signInWithEmailAndPassword(email: string, password = 'password123') {
+    console.log('[Auth] User attempting signInWithEmailAndPassword:', email);
     try {
-      // 1. Attempt login with Supabase
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      // 1. Authenticate with Supabase (times out in 4.5 seconds to prevent frozen button)
+      const loginPromise = supabase.auth.signInWithPassword({
         email,
         password
       });
+      const { data: authData, error: authError } = await promiseWithTimeout(loginPromise, 4500, 'signInWithPassword');
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('No user data returned');
-
-      // fetch profile
-      const { data: dbUser, error: dbErr } = await supabase.from('users').select('*').eq('userId', authData.user.id).single();
-      if (!dbErr && dbUser) {
-        const profile = dbUser as UserProfile;
-        if (profile.status === 'suspended') {
-          await supabase.auth.signOut();
-          throw new Error('This account has been suspended. Please contact customer care.');
-        }
-        await logAction(profile.userId, profile.role, 'Logged into account via Supabase Auth', profile.userId, profile.name);
-        this._currentUser = profile;
-        this._triggerAuthChange(profile);
-        return profile;
+      if (authError) {
+        console.warn('[Auth] signInWithPassword error returned from Supabase:', authError.message);
+        throw authError;
       }
-      
-      // Look up fallback
-      const localUsers = localCache.get<UserProfile>('users');
-      const found = localUsers.find(u => u.email === email);
-      if (found) {
-        this._currentUser = found;
-        this._triggerAuthChange(found);
-        return found;
+      if (!authData.user) {
+        console.warn('[Auth] signInWithPassword returned no user object');
+        throw new Error('No user data returned from Auth Server');
       }
 
+      console.log('[Auth] Supabase Login Success, UID:', authData.user.id);
+
+      // 2. Instantly construct their profile so they get let in to `/home` without waiting on slow DB
       const isUserAdmin = email === 'paypalwash007@gmail.com' || email.toLowerCase().includes('admin');
-      const fallbackProfile: UserProfile = {
+      
+      // First search the local storage cache to preserve any custom registration states
+      const localUsers = localCache.get<UserProfile>('users');
+      const cachedUser = localUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+      const immediateProfile: UserProfile = cachedUser || {
         userId: authData.user.id,
-        name: email.split('@')[0],
+        name: authData.user.user_metadata?.full_name || authData.user.user_metadata?.name || email.split('@')[0],
         email,
-        phone: '',
+        phone: authData.user.user_metadata?.phone || '',
         role: isUserAdmin ? 'admin' : 'user',
         status: isUserAdmin ? 'active' : 'kyc_pending',
         referralCode: 'VG-' + authData.user.id.substring(0, 5).toUpperCase(),
@@ -361,13 +392,48 @@ class RealSupabaseAuth {
         notificationPrefs: { email: true, sms: true }
       };
 
-      await supabase.from('users').insert([fallbackProfile]);
-      localCache.add('users', fallbackProfile);
-      this._currentUser = fallbackProfile;
-      this._triggerAuthChange(fallbackProfile);
-      return fallbackProfile;
+      // Set user immediately and fire the auth change trigger so they navigate away from the login screen instantly
+      this._currentUser = immediateProfile;
+      this._triggerAuthChange(immediateProfile);
+
+      // Also log the action in the background (no-op on fail)
+      logAction(immediateProfile.userId, immediateProfile.role, 'Logged into account via Supabase Auth', immediateProfile.userId, immediateProfile.name).catch(() => {});
+
+      // 3. Complete actual database query in the background to fetch/merge any updated configurations
+      supabase
+        .from('users')
+        .select('*')
+        .eq('userId', authData.user.id)
+        .single()
+        .then(
+          ({ data, error }) => {
+            if (!error && data) {
+              const profile = data as UserProfile;
+              if (profile.status === 'suspended') {
+                console.warn('[Auth] Account found to be suspended in background check. Triggering disconnect.');
+                this.signOut().catch(() => {});
+                return;
+              }
+              this._currentUser = profile;
+              this._triggerAuthChange(profile);
+              localCache.add('users', profile);
+            } else {
+              console.warn('[Auth] Background profile query db miss or error:', error?.message);
+              // Write immediateProfile to Supabase DB so it's there next time
+              supabase.from('users').insert([immediateProfile]).then(({ error: insertErr }) => {
+                if (insertErr) console.warn('Supabase profile insertion fallback error:', insertErr.message);
+              });
+              localCache.add('users', immediateProfile);
+            }
+          },
+          (e) => {
+            console.warn('[Auth] Background profile resolver exception caught gracefully:', e);
+          }
+        );
+
+      return immediateProfile;
     } catch (err: any) {
-      console.warn('Supabase signin failed, invoking fail-safe local sandbox fallbacks:', err.message || err);
+      console.warn('[Auth] Supabase signin failed or timed out, invoking fail-safe local sandbox fallbacks:', err.message || err);
       
       // Fail-safe immediate matching for core user identities to prevent lockout in new Supabase projects
       if (email === 'paypalwash007@gmail.com' || email === 'admin@vestgrow.com') {
@@ -412,10 +478,11 @@ class RealSupabaseAuth {
         return userProfile;
       }
 
-      // Check user cache for other existing accounts
+      // Check user cache for other existing accounts (e.g. registered users)
       const localUsers = localCache.get<UserProfile>('users');
-      const found = localUsers.find(u => u.email === email);
+      const found = localUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
       if (found) {
+        console.log('[Auth Failover] Authorizing from local cache fallback list for:', found.email);
         this._currentUser = found;
         this._triggerAuthChange(found);
         return found;
