@@ -107,7 +107,8 @@ CREATE POLICY "Enable read for authenticated users" ON public.users FOR SELECT T
 CREATE POLICY "Enable insert/update access for users" ON public.users FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 CREATE POLICY "Enable all for authenticated users" ON public.investments FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Enable all for authenticated users" ON public.plans FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Enable public read access for plans" ON public.plans FOR SELECT USING (true);
+CREATE POLICY "Enable administrative modify access for plans" ON public.plans FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Enable all for authenticated users" ON public.withdrawals FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Enable all for authenticated users" ON public.referrals FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Enable all for authenticated users" ON public.notifications FOR ALL TO authenticated USING (true) WITH CHECK (true);

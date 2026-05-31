@@ -17,6 +17,7 @@ import {
   NotificationsView, 
   SettingsView 
 } from './views/InvestorViews';
+import { AuthCallbackView } from './views/AuthCallbackView';
 
 // Backoffice administrative subviews
 import {
@@ -103,6 +104,8 @@ export default function App() {
             <Route path="/login" element={<LoginView />} />
             <Route path="/signup" element={<SignUpView />} />
           </Route>
+
+          <Route path="/auth/callback" element={<AuthCallbackView />} />
 
           {/* Secure Client / Investor Views */}
           <Route element={<InvestorRouteWrapper />}>

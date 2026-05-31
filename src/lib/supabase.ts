@@ -70,15 +70,20 @@ async function bootstrapPlans() {
       return;
     }
     
-    if (!data || data.length === 0) {
+    if (data && data.length > 0) {
+      localCache.set('plans', data);
+    } else {
       console.log('Seeding initial investment plans into Supabase...');
       const { error: seedError } = await supabase.from('plans').insert(SEED_PLANS);
       if (seedError) {
-        console.error('Failed to seed plans into Supabase table:', seedError.message);
+        console.warn('Silent note: Seeding default plans failed (this is expected if RLS is active and you are not Admin):', seedError.message);
+      }
+      if (localCache.get('plans').length === 0) {
+        localCache.set('plans', SEED_PLANS);
       }
     }
   } catch (err) {
-    console.error('Error during plans bootstrap:', err);
+    console.warn('Error during plans bootstrap:', err);
     if (localCache.get('plans').length === 0) {
       localCache.set('plans', SEED_PLANS);
     }
@@ -145,7 +150,7 @@ class RealSupabaseAuth {
           const isUserAdmin = sbUser.email === 'paypalwash007@gmail.com' || sbUser.email?.toLowerCase().includes('admin');
           const fallbackProfile: UserProfile = {
             userId: sbUser.id,
-            name: sbUser.user_metadata?.name || sbUser.email?.split('@')[0] || 'Investor',
+            name: sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email?.split('@')[0] || 'Investor',
             email: sbUser.email || '',
             phone: sbUser.user_metadata?.phone || '',
             role: isUserAdmin ? 'admin' : 'user',
@@ -155,6 +160,13 @@ class RealSupabaseAuth {
             notificationPrefs: { email: true, sms: true }
           };
           this._currentUser = fallbackProfile;
+          
+          // Persist in Supabase and cache
+          supabase.from('users').insert([fallbackProfile]).then(({ error }) => {
+            if (error) console.warn('Silent note: Profile insert failed:', error.message);
+          });
+          localCache.add('users', fallbackProfile);
+
           if (!silent) this._triggerAuthChange(fallbackProfile);
         }
       }

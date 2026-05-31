@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../components/AppContext';
-import { auth, logAction } from '../lib/firebaseMock';
+import { auth, logAction, supabase } from '../lib/firebaseMock';
 import { useNavigate } from 'react-router';
 import CountdownTimer from '../components/CountdownTimer';
 import InvestmentProgressBar from '../components/InvestmentProgressBar';
@@ -36,7 +36,8 @@ import {
   ShieldAlert,
   ArrowRight,
   Eye,
-  Trash2
+  Trash2,
+  Chrome
 } from 'lucide-react';
 
 // ==========================================
@@ -353,39 +354,95 @@ export function LoginView() {
     }
   };
 
-  const autofillUser = (role: 'user' | 'admin') => {
-    if (role === 'user') {
-      setEmail('user@vestgrow.com');
-      setPassword('password123');
-    } else {
-      // Auto fill with custom credentials or predefined admin from system metadata
-      setEmail('paypalwash007@gmail.com');
-      setPassword('admin123');
+  const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      const { data, error: oauthErr } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true
+        }
+      });
+
+      if (oauthErr) throw oauthErr;
+      if (!data?.url) throw new Error('Could not establish third-party sign-in handshake.');
+
+      // Open OAuth window directly in a popup (required for iframe preview)
+      const width = 500;
+      const height = 600;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+
+      const popup = window.open(
+        data.url,
+        'google_oauth_popup',
+        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+      );
+
+      if (!popup) {
+        setError('Popup was blocked by your browser. Please allow popups to sign in with Google.');
+        setLoading(false);
+      }
+    } catch (err: any) {
+      setError(err.message || 'OAuth sign-in failed');
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      const origin = event.origin;
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+        return;
+      }
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        setLoading(true);
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const isUserAdmin = user.email === 'paypalwash007@gmail.com' || user.email?.toLowerCase().includes('admin');
+            if (isUserAdmin) {
+              navigate('/admin');
+            } else {
+              navigate('/home');
+            }
+          }
+        } catch (err: any) {
+          setError('Failed to load user profile: ' + (err.message || err));
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [navigate]);
+
   return (
-    <div className="max-w-md mx-auto my-12 p-8 glass-card shadow-2xl text-gray-805">
-      <div className="text-center mb-8">
-        <div className="inline-flex bg-emerald-50 text-[#0F6E56] font-display font-extrabold text-2xl px-4 py-2 rounded-xl mb-3">
+    <div className="max-w-md mx-auto my-12 p-8 glass-card shadow-2xl text-gray-805" id="login_card">
+      <div className="text-center mb-8" id="login_header">
+        <div className="inline-flex bg-emerald-50 text-[#0F6E56] font-display font-extrabold text-2xl px-4 py-2 rounded-xl mb-3" id="login_logo">
           VG
         </div>
-        <h2 className="font-display font-bold text-2xl text-gray-900 tracking-tight">Welcome Back</h2>
-        <p className="text-sm text-gray-500 mt-1.5 font-medium">Log into the investor portal or administrative control backoffice.</p>
+        <h2 className="font-display font-bold text-2xl text-gray-900 tracking-tight" id="login_title">Welcome Back</h2>
+        <p className="text-sm text-gray-500 mt-1.5 font-medium" id="login_subtitle">Log into your secure modern investor portal.</p>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold flex items-center gap-2">
-          <ShieldAlert size={14} className="shrink-0" />
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold flex items-center gap-2" id="login_error">
+          <ShieldAlert size={14} className="shrink-0" id="login_error_icon" />
           {error}
         </div>
       )}
 
-      <form onSubmit={handleLogin} className="space-y-4">
+      <form onSubmit={handleLogin} className="space-y-4" id="login_form">
         <div>
-          <label className="block text-xs font-bold text-gray-650 uppercase tracking-wider mb-1">Email Address</label>
-          <div className="relative">
-            <Mail size={16} className="absolute left-3 top-3.5 text-gray-400" />
+          <label className="block text-xs font-bold text-gray-650 uppercase tracking-wider mb-1" id="login_email_label">Email Address</label>
+          <div className="relative" id="login_email_container">
+            <Mail size={16} className="absolute left-3 top-3.5 text-gray-400" id="login_email_icon" />
             <input
               type="email"
               required
@@ -393,14 +450,15 @@ export function LoginView() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="user@vestgrow.com"
               className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#0F6E56]"
+              id="login_email_input"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-gray-650 uppercase tracking-wider mb-1">Password</label>
-          <div className="relative">
-            <Lock size={16} className="absolute left-3 top-3.5 text-gray-400" />
+          <label className="block text-xs font-bold text-gray-650 uppercase tracking-wider mb-1" id="login_password_label">Password</label>
+          <div className="relative" id="login_password_container">
+            <Lock size={16} className="absolute left-3 top-3.5 text-gray-450" id="login_password_icon" />
             <input
               type="password"
               required
@@ -408,6 +466,7 @@ export function LoginView() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-[#0F6E56]"
+              id="login_password_input"
             />
           </div>
         </div>
@@ -416,34 +475,35 @@ export function LoginView() {
           type="submit"
           disabled={loading}
           className="w-full bg-[#0F6E56] hover:bg-[#0b5441] text-white font-bold py-3 rounded-lg text-sm transition-colors cursor-pointer"
+          id="login_submit_btn"
         >
           {loading ? "Authenticating..." : "Log In"}
         </button>
 
-        {/* Quick Autofill Sandbox Section to help testers */}
-        <div className="bg-slate-50 border border-dashed border-gray-200 rounded-lg p-3 text-center text-xs mt-4">
-          <p className="font-bold text-gray-500 mb-2">Sandbox Test login Fillers</p>
-          <div className="flex justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => autofillUser('user')}
-              className="px-2.5 py-1 bg-[#e6f1ee] hover:bg-emerald-100 text-[#0F6E56] font-semibold rounded text-[11px] transition-colors cursor-pointer"
-            >
-              Investor (User)
-            </button>
-            <button
-              type="button"
-              onClick={() => autofillUser('admin')}
-              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-350 text-gray-700 font-semibold rounded text-[11px] transition-colors cursor-pointer"
-            >
-              System Admin
-            </button>
-          </div>
+        <div className="relative flex py-2 items-center" id="login_divider_container">
+          <div className="flex-grow border-t border-gray-200" id="login_divider_left"></div>
+          <span className="flex-shrink mx-4 text-gray-400 text-xs font-medium" id="login_divider_text">or</span>
+          <div className="flex-grow border-t border-gray-200" id="login_divider_right"></div>
         </div>
 
-        <p className="text-center text-xs text-gray-500 mt-6">
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          className="w-full bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 font-semibold py-2.5 rounded-lg text-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+          id="login_google_btn"
+        >
+          {loading ? (
+            <div className="animate-spin w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full" id="google_loading_spinner"></div>
+          ) : (
+            <Chrome size={18} className="text-red-500" id="login_google_icon" />
+          )}
+          Continue with Google
+        </button>
+
+        <p className="text-center text-xs text-gray-500 mt-6" id="login_signup_prompt">
           Don't have an account?{' '}
-          <button type="button" onClick={() => navigate('/signup')} className="text-[#0F6E56] font-bold hover:underline">
+          <button type="button" onClick={() => navigate('/signup')} className="text-[#0F6E56] font-bold hover:underline" id="login_signup_btn">
             Register as investor
           </button>
         </p>

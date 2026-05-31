@@ -4,6 +4,7 @@
 export {
   auth,
   db,
+  supabase,
   logAction,
   checkAndMatureInvestments,
   sendSystemNotification,
