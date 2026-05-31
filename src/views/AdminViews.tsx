@@ -185,7 +185,7 @@ export function AdminOverviewView() {
             {/* Legend indicators */}
             <div className="space-y-1 text-xs">
               {planBreakdown.map((item, idx) => (
-                <div key={item.name} className="flex justify-between items-center text-[11px] text-slate-400">
+                <div key={`${item.name}-${idx}`} className="flex justify-between items-center text-[11px] text-slate-400">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                     <span>{item.name}</span>

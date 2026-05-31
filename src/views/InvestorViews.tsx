@@ -332,6 +332,9 @@ export function LoginView() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const showSandbox = window.location.search.includes('developer=true') || 
+                      window.location.search.includes('sandbox=true');
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -395,7 +398,7 @@ export function LoginView() {
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      if (origin !== window.location.origin && !origin.endsWith('.run.app') && !origin.includes('localhost')) {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
@@ -424,7 +427,10 @@ export function LoginView() {
   return (
     <div className="max-w-md mx-auto my-12 p-8 glass-card shadow-2xl text-gray-805" id="login_card">
       <div className="text-center mb-8" id="login_header">
-        <div className="inline-flex bg-emerald-50 text-[#0F6E56] font-display font-extrabold text-2xl px-4 py-2 rounded-xl mb-3" id="login_logo">
+        <div 
+          className="inline-flex bg-emerald-50 text-[#0F6E56] font-display font-extrabold text-2xl px-4 py-2 rounded-xl mb-3 select-none" 
+          id="login_logo"
+        >
           VG
         </div>
         <h2 className="font-display font-bold text-2xl text-gray-900 tracking-tight" id="login_title">Welcome Back</h2>
@@ -501,6 +507,44 @@ export function LoginView() {
           Continue with Google
         </button>
 
+        {showSandbox && (
+          <div className="mt-6 bg-slate-50 border border-slate-100 rounded-xl p-4 text-xs font-sans text-gray-600 block animate-in fade-in slide-in-from-top-2 duration-300" id="login_autofill_box">
+            <h4 className="font-bold text-gray-800 mb-1 flex items-center gap-1.5" id="autofill_box_title">
+              <span>⚡ Quick Sandbox Access</span>
+            </h4>
+            <p className="text-[10px] text-gray-400 mb-3" id="autofill_box_desc">Click either portal role option below to autofill credentials and run checks instantly.</p>
+            <div className="grid grid-cols-2 gap-2" id="autofill_box_buttons_container">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('paypalwash007@gmail.com');
+                  setPassword('admin123');
+                }}
+                className="flex flex-col text-left p-2.5 bg-white border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/20 rounded-lg transition-all cursor-pointer group"
+                id="autofill_btn_admin"
+              >
+                <span className="font-bold text-xs text-emerald-800 group-hover:text-emerald-900" id="autofill_admin_label">System Admin 👑</span>
+                <span className="text-[9px] text-gray-400 mt-0.5 break-all font-mono" id="autofill_admin_email">paypalwash007@gmail.com</span>
+                <span className="text-[9px] text-gray-400 font-mono" id="autofill_admin_pass">Pass: admin123</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('user@vestgrow.com');
+                  setPassword('password123');
+                }}
+                className="flex flex-col text-left p-2.5 bg-white border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/20 rounded-lg transition-all cursor-pointer group"
+                id="autofill_btn_user"
+              >
+                <span className="font-bold text-xs text-slate-850 group-hover:text-slate-900" id="autofill_user_label">Investor Portal 📈</span>
+                <span className="text-[9px] text-gray-400 mt-0.5 break-all font-mono" id="autofill_user_email">user@vestgrow.com</span>
+                <span className="text-[9px] text-gray-400 font-mono" id="autofill_user_pass">Pass: password123</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <p className="text-center text-xs text-gray-500 mt-6" id="login_signup_prompt">
           Don't have an account?{' '}
           <button type="button" onClick={() => navigate('/signup')} className="text-[#0F6E56] font-bold hover:underline" id="login_signup_btn">
@@ -524,6 +568,57 @@ export function HomeView() {
   const [selectedBank, setSelectedBank] = useState('');
   const [withdrawError, setWithdrawError] = useState('');
   const [withdrawSuccess, setWithdrawSuccess] = useState(false);
+
+  // Monnify Deposit States
+  const [depositModalOpen, setDepositModalOpen] = useState(false);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositLoading, setDepositLoading] = useState(false);
+  const [depositError, setDepositError] = useState('');
+  const [depositSuccessUrl, setDepositSuccessUrl] = useState('');
+
+  const handleMonnifyDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDepositError('');
+    setDepositLoading(true);
+    setDepositSuccessUrl('');
+
+    const amtNum = Number(depositAmount);
+    if (!depositAmount || isNaN(amtNum) || amtNum < 100) {
+      setDepositError('Minimum deposit threshold is ₦100.');
+      setDepositLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/deposit/monnify-init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amtNum,
+          userId: currentUser?.userId,
+          paymentType: 'deposit',
+          customerEmail: currentUser?.email,
+          customerName: currentUser?.name
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Connection to Monnify failed');
+      }
+
+      if (resData.checkoutUrl) {
+        setDepositSuccessUrl(resData.checkoutUrl);
+        window.open(resData.checkoutUrl, '_blank');
+      } else {
+        throw new Error('No checkout URL returned from server.');
+      }
+    } catch (err: any) {
+      setDepositError(err.message || 'Error handshaking with Monnify server');
+    } finally {
+      setDepositLoading(false);
+    }
+  };
 
   // Filter investments
   const userInvestments = investments.filter(i => i.userId === currentUser?.userId);
@@ -606,10 +701,17 @@ export function HomeView() {
         </div>
         <div className="flex items-center gap-2">
           <button 
-            onClick={() => navigate('/invest')} 
-            className="flex items-center gap-1 bg-[#0F6E56] hover:bg-[#0b5441] text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-transform hover:-translate-y-0.5 shadow-sm cursor-pointer"
+            onClick={() => setDepositModalOpen(true)}
+            className="flex items-center gap-1 bg-[#0F6E56] hover:bg-[#0b5441] text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-transform hover:-translate-y-0.5 shadow-md shadow-emerald-700/10 cursor-pointer"
           >
-            <ArrowUpRight size={14} /> New Investment
+            <ArrowUpRight size={14} /> Deposit Funds ₦
+          </button>
+
+          <button 
+            onClick={() => navigate('/invest')} 
+            className="flex items-center gap-1 bg-white hover:bg-gray-50 text-gray-700 hover:text-gray-900 border border-gray-200 text-xs font-bold px-4 py-2.5 rounded-lg transition-transform hover:-translate-y-0.5 cursor-pointer"
+          >
+            New Investment
           </button>
           
           <button 
@@ -898,6 +1000,134 @@ export function HomeView() {
         </div>
       )}
 
+      {/* MONNIFY DEPOSIT MODAL */}
+      {depositModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="glass-card max-w-lg w-full p-6 text-gray-850 relative shadow-2xl bg-white/95 backdrop-blur-xl border border-white/50 rounded-2xl">
+            <button 
+              onClick={() => {
+                setDepositModalOpen(false);
+                setDepositAmount('');
+                setDepositError('');
+                setDepositSuccessUrl('');
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 block focus:outline-none text-sm font-bold cursor-pointer"
+            >
+              ✕
+            </button>
+            <h3 className="font-display font-bold text-lg border-b pb-3 mb-4 flex items-center gap-1.5 text-gray-900 uppercase">
+              <ArrowUpRight className="text-emerald-700" size={20} /> Deposit Funds via Monnify ₦
+            </h3>
+
+            {depositSuccessUrl ? (
+              <div className="py-4 text-center space-y-4">
+                <div className="bg-emerald-50 text-[#0F6E56] p-2.5 rounded-full w-14 h-14 flex items-center justify-center mx-auto border border-emerald-150 animate-pulse font-bold text-xl">
+                  ✓
+                </div>
+                <div>
+                  <h4 className="font-bold text-emerald-950 text-base">Secure Gateway Triggered</h4>
+                  <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">We have opened your secure Monnify payment portal in a new browser tab. Please authorize the transaction.</p>
+                </div>
+
+                <div className="bg-slate-50 border rounded-xl p-4 text-left space-y-2 text-xs text-slate-700 max-w-sm mx-auto font-medium">
+                  <p>💸 Amount: <strong className="text-slate-900">₦{Number(depositAmount).toLocaleString()}</strong></p>
+                  <p>📌 Channel: <strong className="text-slate-900">Bank Transfer / Card Payment</strong></p>
+                  <p>⚡ Action Required: <strong className="text-[#0F6E56] font-bold">Please complete the transfer on the secure portal.</strong></p>
+                </div>
+
+                <div className="pt-2 flex flex-col gap-2 max-w-sm mx-auto">
+                  <button 
+                    onClick={() => window.open(depositSuccessUrl, '_blank')}
+                    className="w-full bg-[#0F6E56] hover:bg-[#0b5441] text-white py-2.5 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                  >
+                    Resend to Monnify Portal
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setDepositModalOpen(false);
+                      setDepositAmount('');
+                      setDepositError('');
+                      setDepositSuccessUrl('');
+                    }}
+                    className="w-full bg-slate-100 text-gray-700 hover:bg-slate-250 py-2.5 rounded-lg text-xs font-bold cursor-pointer"
+                  >
+                    Done / Close
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleMonnifyDeposit} className="space-y-4">
+                {depositError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-750 text-xs rounded-lg font-semibold">
+                    {depositError}
+                  </div>
+                )}
+
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 space-y-2 text-xs">
+                  <h4 className="font-bold text-slate-805 flex items-center gap-1">📋 Monnify Merchant Setup Credentials</h4>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-500 leading-relaxed font-sans mt-1 font-medium">
+                    <p>⚡ Contract Code: <strong className="text-gray-800">553940543878</strong></p>
+                    <p>🏦 Account: <strong className="text-gray-800">8065931099</strong></p>
+                  </div>
+                  
+                  {/* Dynamic Copy Webhook segment */}
+                  <div className="border-t border-slate-100 pt-2 mt-2">
+                    <span className="block text-[10px] font-bold text-[#0F6E56] uppercase tracking-wide">Developer Help: Webhook Config Endpoint</span>
+                    <p className="text-[10px] text-zinc-600 bg-white border rounded p-1.5 font-mono select-all mt-1 break-all relative group cursor-pointer" onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/monnify`);
+                        alert('Copied webhook endpoint successfully! Copy-paste this into your Monnify settings.');
+                    }}>
+                      {window.location.origin}/api/webhooks/monnify
+                      <span className="absolute right-1 top-1 bg-gray-50 text-gray-500 px-1 py-0.5 text-[8px] rounded border uppercase font-bold select-none">Copy Click</span>
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-1 italic leading-tight">Copy and paste this webhook URL into your Monnify developer settings under "Transaction completion" to handle live updates perfectly!</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                    Deposit Amount (Naira - ₦)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={100}
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    placeholder="e.g. 5000"
+                    className="w-full border rounded-lg p-2.5 text-sm focus:outline-[#0F6E56] font-mono"
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1 font-medium">
+                    Deposited wallet cash counts instantly toward your accessible matured portfolio balance.
+                  </div>
+                </div>
+
+                <div className="pt-3 flex justify-end gap-2 border-t">
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setDepositModalOpen(false);
+                      setDepositAmount('');
+                      setDepositError('');
+                    }}
+                    className="px-4 py-2 border rounded-lg text-xs font-bold text-gray-500 bg-white cursor-pointer hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={depositLoading}
+                    className="px-5 py-2 rounded-lg text-xs font-bold bg-[#0F6E56] text-white hover:bg-[#0b5441] disabled:bg-slate-300 cursor-pointer"
+                  >
+                    {depositLoading ? 'Initiating Secure Handshake...' : 'Initiate Secure Monnify Checkout'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -909,10 +1139,12 @@ export function InvestView() {
   const { plans, initiateInvestment, currentUser, formatMoney } = useApp();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState(1); // 1: choose plan, 2: set amount, 3: simulated paystack checkout, 4: confirmation
+  const [step, setStep] = useState(1); // 1: choose plan, 2: set amount, 3: checkout/instructions, 4: confirmation
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [amount, setAmount] = useState('');
   const [investCurrency, setInvestCurrency] = useState<'NGN' | 'USD'>('NGN');
+  const [paymentGateway, setPaymentGateway] = useState<'paystack' | 'monnify'>('paystack');
+  const [monnifyUrl, setMonnifyUrl] = useState('');
   
   // Paystack credit card simulation
   const [cardNumber, setCardNumber] = useState('');
@@ -924,7 +1156,6 @@ export function InvestView() {
 
   // Handle plan prepopulation from state (if redirecting from clicking card on home)
   useEffect(() => {
-    // Standard react router router location handling
     const planFromState = (window.history.state as any)?.usr?.selectedPlanId;
     if (planFromState) {
       setSelectedPlanId(planFromState);
@@ -939,7 +1170,7 @@ export function InvestView() {
     setStep(2);
   };
 
-  const handleSetAmountSubmit = (e: React.FormEvent) => {
+  const handleSetAmountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPayError('');
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
@@ -949,7 +1180,6 @@ export function InvestView() {
 
     const numAmt = Number(amount);
     if (activePlan) {
-      // Validate minimum threshold based on selected currency
       const minLimit = investCurrency === 'NGN' ? activePlan.minAmount : activePlan.minAmount / 1600;
       if (numAmt < minLimit) {
         setPayError(`Minimum threshold capital required for this plan is ${investCurrency === 'NGN' ? '₦' : '$'}${minLimit.toLocaleString(undefined, { maximumFractionDigits: 0 })}`);
@@ -957,7 +1187,44 @@ export function InvestView() {
       }
     }
 
-    setStep(3); // Route to Paystack Simulated Popup
+    if (paymentGateway === 'monnify' && investCurrency === 'NGN') {
+      setPayLoading(true);
+      try {
+        const response = await fetch('/api/deposit/monnify-init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: numAmt,
+            userId: currentUser?.userId,
+            paymentType: 'invest',
+            planId: selectedPlanId,
+            customerEmail: currentUser?.email,
+            customerName: currentUser?.name
+          })
+        });
+
+        const resData = await response.json();
+        if (!response.ok) {
+          throw new Error(resData.error || 'Monnify checkout initiation failed');
+        }
+
+        if (resData.checkoutUrl) {
+          setMonnifyUrl(resData.checkoutUrl);
+          setCreatedInvId(resData.paymentReference || 'mnfy_invest_session');
+          // Open Monnify payment portal securely in a new window popup
+          window.open(resData.checkoutUrl, '_blank');
+          setStep(3);
+        } else {
+          throw new Error('Merchant did not return a valid Monnify session URL');
+        }
+      } catch (err: any) {
+        setPayError(err.message || 'Handshake failed contacting Monnify services');
+      } finally {
+        setPayLoading(false);
+      }
+    } else {
+      setStep(3); // Route to Paystack Simulated popup
+    }
   };
 
   const handleSimulatedPayment = async (status: 'success' | 'failed') => {
@@ -973,12 +1240,9 @@ export function InvestView() {
       const paystackRef = 'PSTK-' + Math.random().toString(36).substring(2, 10).toUpperCase();
       const numAmt = Number(amount);
       
-      // 1. Submit investment as pending to Firestore
       const invId = await initiateInvestment(selectedPlanId, numAmt, investCurrency, paystackRef);
       setCreatedInvId(invId);
 
-      // 2. Trigger Express full-stack API route /api/paystack/webhook to verify payment reference
-      // Simulates system-to-system webhook operation
       const response = await fetch('/api/paystack/webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -995,11 +1259,9 @@ export function InvestView() {
         throw new Error('Error processed during database webhook alignment.');
       }
 
-      // 3. Webhook simulation success: Update pending investment to status: 'active'
       const { db } = await import('../lib/firebaseMock');
       await db.doc('investments', invId).update({ status: 'active' });
       
-      // Log Success Activity
       logAction(
         currentUser?.userId || 'system',
         'user',
@@ -1008,7 +1270,7 @@ export function InvestView() {
         currentUser?.name || ''
       );
 
-      setStep(4); // Move to final receipt screen
+      setStep(4);
     } catch (err: any) {
       setPayError(err.message || 'Payment processor failed to update status');
     } finally {
@@ -1085,12 +1347,16 @@ export function InvestView() {
 
           <form onSubmit={handleSetAmountSubmit} className="space-y-4">
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">Select Investment Currency</label>
                 <select
                   value={investCurrency}
-                  onChange={(e) => setInvestCurrency(e.target.value as 'NGN' | 'USD')}
+                  onChange={(e) => {
+                    const nextCurr = e.target.value as 'NGN' | 'USD';
+                    setInvestCurrency(nextCurr);
+                    if (nextCurr === 'USD') setPaymentGateway('paystack');
+                  }}
                   className="w-full border rounded-lg p-3 bg-white text-sm font-semibold focus:outline-none focus:border-[#0F6E56]"
                 >
                   <option value="NGN">NGN (Nigerian Naira - ₦)</option>
@@ -1111,6 +1377,29 @@ export function InvestView() {
               </div>
             </div>
 
+            {investCurrency === 'NGN' && (
+              <div>
+                <label className="block text-xs font-bold text-[#0F6E56] mb-1.5 uppercase tracking-wider">Choose Payment Checkout Engine</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setPaymentGateway('paystack')}
+                    className={`border rounded-xl p-3 cursor-pointer transition-all ${paymentGateway === 'paystack' ? 'bg-emerald-50/50 border-[#0F6E56] shadow-xs' : 'bg-white border-slate-200'}`}
+                  >
+                    <span className="block text-xs font-bold text-slate-805">Simulated Card Checkout</span>
+                    <span className="block text-[10px] text-gray-400 mt-0.5">Paystack sandbox emulator</span>
+                  </div>
+                  
+                  <div
+                    onClick={() => setPaymentGateway('monnify')}
+                    className={`border rounded-xl p-3 cursor-pointer transition-all ${paymentGateway === 'monnify' ? 'bg-emerald-50/50 border-[#0F6E56] shadow-xs' : 'bg-white border-slate-200'}`}
+                  >
+                    <span className="block text-xs font-bold text-emerald-800 flex items-center gap-1">Monnify Gateway 🚀</span>
+                    <span className="block text-[10px] text-[#0F6E56] font-medium mt-0.5">Bank transfer & Card (Live)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-50 border p-4 rounded-lg space-y-1 text-xs">
               <div className="flex justify-between"><span>Minimum Required threshold:</span> <strong>{investCurrency === 'NGN' ? '₦' : '$'}{(investCurrency === 'NGN' ? activePlan.minAmount : activePlan.minAmount / 1600).toLocaleString()}</strong></div>
               <div className="flex justify-between"><span>Yield Returns percentage:</span> <strong className="text-[#0F6E56]">{activePlan.defaultROI}% Return</strong></div>
@@ -1124,9 +1413,10 @@ export function InvestView() {
 
             <button
               type="submit"
-              className="w-full bg-[#0F6E56] hover:bg-[#0b5441] text-white font-bold py-3 rounded-lg text-sm transition-transform cursor-pointer"
+              disabled={payLoading}
+              className="w-full bg-[#0F6E56] hover:bg-[#0b5441] disabled:bg-slate-300 text-white font-bold py-3 rounded-lg text-sm transition-transform cursor-pointer"
             >
-              Continue to Paystack checkout screen
+              {payLoading ? 'Initiating Checkout handshakes...' : paymentGateway === 'monnify' ? 'Initialize Monnify Payment Portal' : 'Continue to Paystack checkout screen'}
             </button>
           </form>
         </div>
@@ -1134,86 +1424,122 @@ export function InvestView() {
 
       {step === 3 && activePlan && (
         <div className="space-y-6">
-          <div className="text-center">
-            <h3 className="text-lg font-display font-medium text-gray-900">Checkout gateway: Paystack checkout</h3>
-            <p className="text-xs text-gray-500 mt-1">We utilize Paystack secure servers for cards and deposits authorization.</p>
-          </div>
+          {paymentGateway === 'monnify' ? (
+            <div className="space-y-5 text-center max-w-sm mx-auto">
+              <div className="bg-emerald-50 text-emerald-800 p-3 rounded-full w-14 h-14 flex items-center justify-center mx-auto border border-emerald-100 animate-pulse">
+                <CheckCircle size={28} />
+              </div>
+              <div>
+                <h3 className="text-lg font-display font-bold text-gray-900 tracking-tight">Monnify Handshake Activated</h3>
+                <p className="text-xs text-gray-500 mt-1">We have generated your secure Monnify payment session in a new web tab.</p>
+              </div>
 
-          {payError && (
-            <div className="p-3 bg-rose-550/10 border border-red-200 text-rose-800 rounded-lg text-xs font-semibold">{payError}</div>
+              <div className="bg-slate-50 border rounded-xl p-4 text-left space-y-2 text-xs text-gray-700 leading-relaxed font-sans">
+                <p>💸 Amount: <strong className="text-gray-900">₦{Number(amount).toLocaleString()}</strong></p>
+                <p>📌 Plan Yield: <strong className="text-gray-900">{activePlan.name}</strong></p>
+                <p>⚡ Action Required: <span className="font-semibold text-[#0F6E56]">Authorize Bank Transfer/Card checkout on the newly opened popup window.</span></p>
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  onClick={() => window.open(monnifyUrl, '_blank')}
+                  className="w-full bg-[#0F6E56] hover:bg-[#0b5441] text-white font-bold p-3 rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Open Checkout Portal Again
+                </button>
+                <button
+                  onClick={() => navigate('/portfolio')}
+                  className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold p-2.5 rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Return to Portfolio
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 italic">As soon as our central Webhook listener detects payment success, your investment matures automatically!</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h3 className="text-lg font-display font-medium text-gray-900">Checkout gateway: Paystack checkout</h3>
+                <p className="text-xs text-gray-500 mt-1">We utilize Paystack secure servers for cards and deposits authorization.</p>
+              </div>
+
+              {payError && (
+                <div className="p-3 bg-rose-550/10 border border-red-200 text-rose-800 rounded-lg text-xs font-semibold">{payError}</div>
+              )}
+
+              {/* Secure simulated card entry field */}
+              <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden font-mono text-sm max-w-sm mx-auto select-none">
+                <span className="text-xs font-bold tracking-widest text-[#0F6E56]">SECURE CHECKOUT TERMINAL</span>
+                <div className="text-lg tracking-widest mt-6 font-bold">{cardNumber || "••••  ••••  ••••  ••••"}</div>
+                <div className="flex justify-between items-center mt-6 text-xs text-slate-350">
+                  <div>
+                    <p className="text-[9px] text-gray-500 uppercase">Card Holder</p>
+                    <p className="font-sans font-semibold text-white">{currentUser?.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] text-gray-500 uppercase">ExpiryDate</p>
+                    <p>{cardExpiry || "MM/YY"}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 max-w-sm mx-auto">
+                <div className="grid grid-cols-1 gap-2.5">
+                  <input
+                    type="text"
+                    placeholder="Card Number"
+                    maxLength={19}
+                    value={cardNumber}
+                    onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim())}
+                    className="border p-2 rounded text-xs select-none focus:outline-[#0F6E56] placeholder-gray-300 font-mono"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="Expiry MM/YY"
+                      maxLength={5}
+                      value={cardExpiry}
+                      onChange={(e) => setCardExpiry(e.target.value)}
+                      className="border p-2 rounded text-xs focus:outline-[#0F6E56] placeholder-gray-300 font-mono"
+                    />
+                    <input
+                      type="password"
+                      placeholder="CVV"
+                      maxLength={3}
+                      value={cardCvv}
+                      onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, ''))}
+                      className="border p-2 rounded text-xs focus:outline-[#0F6E56] placeholder-gray-300 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 flex flex-col gap-2">
+                  <button
+                    onClick={() => handleSimulatedPayment('success')}
+                    disabled={payLoading}
+                    className="bg-[#0F6E56] hover:bg-[#0b5441] text-white font-bold p-3 rounded text-xs transition-colors cursor-pointer"
+                  >
+                    {payLoading ? "Validating Paystack Reference..." : `Charge Now (${investCurrency === 'NGN' ? '₦' : '$'}${Number(amount).toLocaleString()})`}
+                  </button>
+                  
+                  <button
+                    onClick={() => handleSimulatedPayment('failed')}
+                    disabled={payLoading}
+                    className="bg-gray-150 hover:bg-gray-200 text-gray-700 font-bold p-2.5 rounded text-xs transition-colors cursor-pointer"
+                  >
+                    Simulate Declined Card Check
+                  </button>
+
+                  <button
+                    onClick={() => setStep(2)}
+                    className="text-xs text-gray-500 hover:underline text-center"
+                  >
+                    Go back to details
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
-
-          {/* Secure simulated card entry field */}
-          <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl relative overflow-hidden font-mono text-sm max-w-sm mx-auto select-none">
-            <span className="text-xs font-bold tracking-widest text-[#0F6E56]">SECURE CHECKOUT TERMINAL</span>
-            <div className="text-lg tracking-widest mt-6 font-bold">{cardNumber || "••••  ••••  ••••  ••••"}</div>
-            <div className="flex justify-between items-center mt-6 text-xs text-slate-350">
-              <div>
-                <p className="text-[9px] text-gray-500 uppercase">Card Holder</p>
-                <p className="font-sans font-semibold text-white">{currentUser?.name}</p>
-              </div>
-              <div>
-                <p className="text-[9px] text-gray-500 uppercase">ExpiryDate</p>
-                <p>{cardExpiry || "MM/YY"}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3 max-w-sm mx-auto">
-            <div className="grid grid-cols-1 gap-2.5">
-              <input
-                type="text"
-                placeholder="Card Number"
-                maxLength={19}
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim())}
-                className="border p-2 rounded text-xs select-none focus:outline-[#0F6E56] placeholder-gray-300 font-mono"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Expiry MM/YY"
-                  maxLength={5}
-                  value={cardExpiry}
-                  onChange={(e) => setCardExpiry(e.target.value)}
-                  className="border p-2 rounded text-xs focus:outline-[#0F6E56] placeholder-gray-300 font-mono"
-                />
-                <input
-                  type="password"
-                  placeholder="CVV"
-                  maxLength={3}
-                  value={cardCvv}
-                  onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, ''))}
-                  className="border p-2 rounded text-xs focus:outline-[#0F6E56] placeholder-gray-300 font-mono"
-                />
-              </div>
-            </div>
-
-            <div className="pt-4 flex flex-col gap-2">
-              <button
-                onClick={() => handleSimulatedPayment('success')}
-                disabled={payLoading}
-                className="bg-[#0F6E56] hover:bg-[#0b5441] text-white font-bold p-3 rounded text-xs transition-colors cursor-pointer"
-              >
-                {payLoading ? "Validating Paystack Reference..." : `Charge Now (${investCurrency === 'NGN' ? '₦' : '$'}${Number(amount).toLocaleString()})`}
-              </button>
-              
-              <button
-                onClick={() => handleSimulatedPayment('failed')}
-                disabled={payLoading}
-                className="bg-gray-150 hover:bg-gray-200 text-gray-700 font-bold p-2.5 rounded text-xs transition-colors cursor-pointer"
-              >
-                Simulate Declined Card Check
-              </button>
-
-              <button
-                onClick={() => setStep(2)}
-                className="text-xs text-gray-500 hover:underline text-center"
-              >
-                Go back to details
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -1236,7 +1562,7 @@ export function InvestView() {
             <div className="flex justify-between"><span>Duration time:</span> <strong className="text-gray-800">{activePlan.duration} Months</strong></div>
             <div className="flex justify-between"><span>Guaranteed Returns:</span> <strong className="text-gray-850 font-semibold">{activePlan.defaultROI}% Rates</strong></div>
             <div className="flex justify-between border-t pt-2 mt-2 font-mono text-[9px] text-[#0F6E56]">
-              <span>Paystack Reference:</span> <span>{createdInvId}</span>
+              <span>Reference code:</span> <span>{createdInvId}</span>
             </div>
           </div>
 
