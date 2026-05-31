@@ -1,0 +1,6 @@
+{
+  "name": "VestGrow",
+  "description": "Full-stack investment and savings platform with dual currency support, KYC verification, active portfolio tracking, and an administrative control panel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

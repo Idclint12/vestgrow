@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Represents security and registration profile for a VestGrow user or administrator.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique user ID from Firebase Authentication" },
+        "name": { "type": "string", "description": "Full legal name" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "phone": { "type": "string", "description": "Mobile contact number" },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "Role classification" },
+        "status": { "type": "string", "enum": ["active", "kyc_pending", "kyc_rejected", "suspended"], "description": "Current authorization state" },
+        "kycDocNIN": { "type": "string" },
+        "kycDocSelfie": { "type": "string" },
+        "kycDocAddress": { "type": "string" },
+        "kycRejectionReason": { "type": "string" },
+        "referralCode": { "type": "string" },
+        "referredBy": { "type": "string" },
+        "bankAccounts": { "type": "array" },
+        "notificationPrefs": { "type": "object" }
+      },
+      "required": ["userId", "name", "email", "phone", "role", "status", "referralCode"]
+    },
+    "Investment": {
+      "title": "Investment",
+      "description": "Active, matured, or pending investments created by user portfolios.",
+      "type": "object",
+      "properties": {
+        "investmentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "planId": { "type": "string" },
+        "planName": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["NGN", "USD"] },
+        "roi": { "type": "number" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "active", "matured", "paid out", "rejected"] },
+        "paystackRef": { "type": "string" },
+        "customRoiApplied": { "type": "boolean" }
+      },
+      "required": ["investmentId", "userId", "planId", "amount", "currency", "roi", "startDate", "endDate", "status", "paystackRef"]
+    },
+    "InvestmentPlan": {
+      "title": "InvestmentPlan",
+      "description": "Seeded or admin-created packages specifying duration rates.",
+      "type": "object",
+      "properties": {
+        "planId": { "type": "string" },
+        "name": { "type": "string" },
+        "duration": { "type": "number" },
+        "minAmount": { "type": "number" },
+        "defaultROI": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["planId", "name", "duration", "minAmount", "defaultROI", "currency", "status"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Portfolios extraction instructions requested by investors.",
+      "type": "object",
+      "properties": {
+        "withdrawalId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["NGN", "USD"] },
+        "bankDetails": { "type": "object" },
+        "status": { "type": "string", "enum": ["pending", "released", "held"] },
+        "requestDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["withdrawalId", "userId", "amount", "currency", "bankDetails", "status", "requestDate"]
+    },
+    "Referral": {
+      "title": "Referral",
+      "description": "Affiliation logging to tracking user referrals incentives.",
+      "type": "object",
+      "properties": {
+        "referralId": { "type": "string" },
+        "referrerId": { "type": "string" },
+        "referredUserId": { "type": "string" },
+        "referredUserName": { "type": "string" },
+        "bonus": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "earned"] },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["referralId", "referrerId", "referredUserId", "bonus", "currency", "status", "date"]
+    },
+    "SystemNotification": {
+      "title": "SystemNotification",
+      "description": "User notification messages.",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "channel": { "type": "string", "enum": ["email+SMS", "email", "SMS"] },
+        "read": { "type": "boolean" },
+        "sentAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["notificationId", "userId", "title", "message", "channel", "read", "sentAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Logging of user and admin transactions.",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string" },
+        "actorId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorRole": { "type": "string", "enum": ["admin", "user"] },
+        "action": { "type": "string" },
+        "targetId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["logId", "actorId", "actorName", "actorRole", "action", "targetId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "UserProfile" },
+      "description": "Registered customer profiles, accounts parameters, and authentication data."
+    },
+    "investments/{investmentId}": {
+      "schema": { "$ref": "Investment" },
+      "description": "Customer active investments, yield conditions, details, and schedules."
+    },
+    "plans/{planId}": {
+      "schema": { "$ref": "InvestmentPlan" },
+      "description": "Official investment and ROI programs designed by the administrators."
+    },
+    "withdrawals/{withdrawalId}": {
+      "schema": { "$ref": "WithdrawalRequest" },
+      "description": "Requested cash extraction requests."
+    },
+    "referrals/{referralId}": {
+      "schema": { "$ref": "Referral" },
+      "description": "Affiliations linking referrers to registering clients."
+    },
+    "notifications/{notificationId}": {
+      "schema": { "$ref": "SystemNotification" },
+      "description": "Broadcasting and microtargeted messages sent to users."
+    },
+    "activityLog/{logId}": {
+      "schema": { "$ref": "ActivityLog" },
+      "description": "Audit trails record of all admin and client events."
+    }
+  }
+}

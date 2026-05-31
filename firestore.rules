@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net (default-deny catch-all)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Global Helper Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // 1. User Profiles Secure Matching
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() && 
+                    request.auth.uid == userId && 
+                    request.resource.data.userId == userId &&
+                    request.resource.data.email is string &&
+                    request.resource.data.name is string &&
+                    request.resource.data.phone is string &&
+                    request.resource.data.role == 'user' && // Block self-signed premium/admin roles
+                    (request.resource.data.status == 'kyc_pending' || request.resource.data.status == 'active');
+      
+      allow update: if (
+                      isOwner(userId) && 
+                      request.resource.data.role == resource.data.role && // No privilege escalation
+                      (
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']) ||
+                        (resource.data.status == 'kyc_rejected' && request.resource.data.status == 'kyc_pending')
+                      )
+                    ) || isAdmin();
+                    
+      allow delete: if isAdmin();
+    }
+    
+    // 2. Investments Secure Matching
+    match /investments/{investmentId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.amount is number &&
+                    request.resource.data.amount > 0 &&
+                    request.resource.data.status == 'pending';
+                    
+      allow update: if (
+                      isSignedIn() && 
+                      resource.data.userId == request.auth.uid && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+                      (resource.data.status == 'pending' && request.resource.data.status == 'active') // Client payment simulation release
+                    ) || isAdmin();
+                    
+      allow delete: if isAdmin();
+    }
+    
+    // 3. Investment Plans Secure Matching
+    match /plans/{planId} {
+      allow read, write: if true;
+    }
+    
+    // 4. Withdrawals Secure Matching
+    match /withdrawals/{withdrawalId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && 
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.amount is number &&
+                    request.resource.data.amount > 0 &&
+                    request.resource.data.status == 'pending';
+                    
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // 5. Referrals Secure Matching
+    match /referrals/{referralId} {
+      allow get: if isSignedIn() && (resource.data.referrerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.referrerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    
+    // 6. System Notifications Secure Matching
+    match /notifications/{notificationId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isSignedIn() && 
+                    (resource.data.userId == request.auth.uid || isAdmin()) &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAdmin();
+    }
+    
+    // 7. Activity Audit Logs Secure Matching
+    match /activityLog/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isSignedIn() && request.resource.data.actorId == request.auth.uid;
+      allow update, delete: if false; // Audit logs remain completely immutable
+    }
+  }
+}
