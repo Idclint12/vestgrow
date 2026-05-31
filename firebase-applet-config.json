@@ -1,10 +1,10 @@
 {
-  "projectId": "gen-lang-client-0528220976",
-  "appId": "1:520585002286:web:9a151bdeaddff4ec404ebf",
-  "apiKey": "AIzaSyD08dT4FDI61TTXCpsmzwlIH34L_nSjgng",
-  "authDomain": "gen-lang-client-0528220976.firebaseapp.com",
+  "projectId": "drowvest",
+  "appId": "1:151516493120:web:e9e629bb1deddfb2b7b6a5",
+  "apiKey": "AIzaSyBRyBwfyrHLeLFp-4DGMYaVJNSj59JB6ek",
+  "authDomain": "drowvest.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-8baf2ba1-f53d-40e8-8877-39b99ba5ae93",
-  "storageBucket": "gen-lang-client-0528220976.firebasestorage.app",
-  "messagingSenderId": "520585002286",
+  "storageBucket": "drowvest.firebasestorage.app",
+  "messagingSenderId": "151516493120",
   "measurementId": ""
 }

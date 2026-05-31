@@ -1,5 +1,5 @@
 // This file is kept to maintain structural compatibility with imports across the codebase.
-// All operations are backed by the real cloud Firebase (Firestore + Auth) engine in firebase.ts.
+// All operations are backed by the real cloud Supabase engine in supabase.ts.
 
 export {
   auth,
@@ -8,6 +8,9 @@ export {
   checkAndMatureInvestments,
   sendSystemNotification,
   fastForwardTime,
-  OperationType,
-  handleFirestoreError
-} from './firebase';
+  OperationType
+} from './supabase';
+
+export function handleFirestoreError(error: any) {
+  console.error("Database connection error: ", error);
+}
